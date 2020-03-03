@@ -5,7 +5,7 @@
 //                   filesystem interfaces.
 //
 //   Author        : Jonathan Mychack
-//   Last Modified : 2/28/20
+//   Last Modified : 3/2/20
 //
 
 // Include files
@@ -20,18 +20,47 @@
 //
 // File system interface implementation
 
-// Variables
-char all_files[256];
-int all_files_pos = 0;
-char open_files[256];
-
-
-LCloudRegisterFrame create_lcloud_registers() {
-
+LCloudRegisterFrame create_lcloud_registers(uint64_t b0, uint64_t b1, uint64_t c0, uint64_t c1, uint64_t c2, uint64_t d0, uint64_t d1) {
+    unsigned int temp1 = b0 << 60;
+    unsigned int temp2 = b1 << 56;
+    unsigned int temp3 = c0 << 48;
+    unsigned int temp4 = c1 << 40;
+    unsigned int temp5 = c2 << 32;
+    unsigned int temp6 = d0 << 16;
+    LCloudRegisterFrame frame = temp1 | temp2 | temp3 | temp4 | temp5 | temp6 | d1;
+    return(frame);
 }
 
-void extract_lcloud_registers(LCloudRegisterFrame resp) {
-
+void extract_lcloud_registers(LCloudRegisterFrame resp, unsigned int b0, unsigned int b1, unsigned int c0, unsigned int c1, unsigned int c2, unsigned int d0, unsigned int d1) {
+    unsigned int *temp1, *temp2, *temp3, *temp4, *temp5, *temp6, *temp7;
+    temp1 = b0;
+    temp2 = b1;
+    temp3 = c0;
+    temp4 = c1;
+    temp5 = c2;
+    temp6 = d0;
+    temp7 = d1;
+    //Case 1
+    unsigned int shift = resp >> 60;
+    *temp1 = shift;
+    //Case 2
+    shift = (resp << 4) >> 60;
+    *temp2 = shift;
+    //Case 3
+    shift = (resp << 8) >> 56;
+    *temp3 = shift;
+    //Case 4
+    shift = (resp << 16) >> 56;
+    *temp4 = shift;
+    //Case 5
+    shift = (resp << 24) >> 56;
+    *temp5 = shift;
+    //Case 6
+    shift = (resp << 32) >> 48;
+    *temp6 = shift;
+    //Case 7
+    shift = (resp << 48) >> 48;
+    *temp7 = shift;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -43,20 +72,7 @@ void extract_lcloud_registers(LCloudRegisterFrame resp) {
 // Outputs      : file handle if successful test, -1 if failure
 
 LcFHandle lcopen( const char *path ) {
-
-    for (int i = 0; i < 256; i++) {  //check if file already open
-        if (open_files[i] == path) {
-            return(-1);
-        }
-    }
-
-    for (int i = 0; i < 256; i++) {
-        if (all_files[i] == path) {
-            
-        }
-    }
-
-    //return();
+    return( 0 ); // Likely wrong
 } 
 
 ////////////////////////////////////////////////////////////////////////////////
