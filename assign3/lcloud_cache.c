@@ -15,9 +15,43 @@
 #include <cmpsc311_log.h>
 #include <lcloud_cache.h>
 
+typedef struct {
+    int cache_line;
+    LcDeviceId device_id;
+    uint16_t sector;
+    uint16_t block;
+    int timestamp;
+    char data[256];
+} Cache;
+
+Cache *cache;
+int hits = 0;
+int misses = 0;
+int *return_data;
 
 //
 // Functions
+
+////////////////////////////////////////////////////////////////////////////////
+//
+// Function     : adjust_timestamps
+// Description  : increments all timestamps by one except for the one given by the inputted cache line
+//
+// Inputs       : cache_line - the cache line number for the data whose timestamp will not be changed
+// Outputs      : 0 if success, -1 if failure
+int adjust_timestamps(int cache_line) {
+
+    for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
+
+        if ((cache[cache_block].cache_line != cache_line) && (cache[cache_block].timestamp != -1)) {
+
+            cache[cache_block].timestamp += 1;
+            return(0);
+        }
+    }
+    
+    return(-1);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -30,6 +64,28 @@
 // Outputs      : cache block if found (pointer), NULL if not or failure
 
 char * lcloud_getcache( LcDeviceId did, uint16_t sec, uint16_t blk ) {
+
+    for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
+
+        int found = 1;
+        if (cache[cache_block].device_id != did  || cache[cache_block].sector != sec || cache[cache_block].block != blk) {
+
+            found = 0;
+        }
+        
+        if (found == 1) {
+
+            hits += 1;
+            cache[cache_block].timestamp = 0;
+            adjust_timestamps(cache[cache_block].cache_line);
+
+            logMessage(LOG_INFO_LEVEL, "Found cache item [%d/%d/%d]", did, sec, blk);
+            return(cache[cache_block].data);
+        }
+    }
+
+    misses += 1;
+    logMessage(LOG_INFO_LEVEL, "Cache item [%d/%d/%d] not found", did, sec, blk);
     /* Return not found */
     return( NULL );
 }
@@ -45,6 +101,74 @@ char * lcloud_getcache( LcDeviceId did, uint16_t sec, uint16_t blk ) {
 // Outputs      : 0 if succesfully inserted, -1 if failure
 
 int lcloud_putcache( LcDeviceId did, uint16_t sec, uint16_t blk, char *block ) {
+
+    for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
+
+        int exists = 1;
+        for (int index = 0; index < 256; index++) {
+
+            if (cache[cache_block].data[index] != block[index]) {
+                exists = 0;
+            }
+        }
+
+        if (exists == 1) {
+            return(-1);
+        }
+    }
+
+    if (did == -1 || sec == -1 || blk == -1) {
+        return(-1);
+    }
+
+    for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
+
+        if (cache[cache_block].timestamp == -1) {
+
+            cache[cache_block].timestamp = 0;
+            cache[cache_block].device_id = did;
+            cache[cache_block].sector = sec;
+            cache[cache_block].block = blk;
+            
+            for (int index = 0; index < 256; index++) {
+                cache[cache_block].data[index] = block[index];
+            }
+
+            adjust_timestamps(cache[cache_block].cache_line);
+            logMessage(LOG_INFO_LEVEL, "LionCloud Cache success inserting cache item [%d/%d/%d]", did, sec, blk);
+            return(0);
+        }
+    }
+
+    int least_recent = 0;
+    int least_recent_line = 0;
+    for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
+
+        if (cache[cache_block].device_id == did && cache[cache_block].sector == sec && cache[cache_block].block == blk) {
+
+            least_recent = cache[cache_block].timestamp;
+            least_recent_line = cache[cache_block].cache_line;
+            break;
+        }
+
+        if (cache[cache_block].timestamp > least_recent) {
+
+            least_recent = cache[cache_block].timestamp;
+            least_recent_line = cache[cache_block].cache_line;
+        }   
+    }
+
+    logMessage(LOG_INFO_LEVEL, "Ejecting cache item [%d/%d/%d]", cache[least_recent_line].device_id, cache[least_recent_line].sector, cache[least_recent_line].block);
+    cache[least_recent_line].timestamp = 0;
+    cache[least_recent_line].device_id = did;
+    cache[least_recent_line].sector = sec;
+    cache[least_recent_line].block = blk;
+
+    for (int index = 0; index < 256; index++) {
+        cache[least_recent_line].data[index] = block[index];
+    }
+    adjust_timestamps(least_recent_line);
+    logMessage(LOG_INFO_LEVEL, "LionCloud Cache success inserting cache item [%d/%d/%d]", did, sec, blk);
     /* Return successfully */
     return( 0 );
 }
@@ -58,6 +182,28 @@ int lcloud_putcache( LcDeviceId did, uint16_t sec, uint16_t blk, char *block ) {
 // Outputs      : 0 if successful, -1 if failure
 
 int lcloud_initcache( int maxblocks ) {
+
+    if (maxblocks != LC_CACHE_MAXBLOCKS) {
+        return(-1);
+    }
+
+    cache = (int*)malloc(maxblocks*sizeof(Cache));
+
+    for (int cache_block = 0; cache_block < maxblocks; cache_block++) {
+
+        cache[cache_block].cache_line = cache_block;
+        cache[cache_block].device_id = -1;
+        cache[cache_block].sector = -1;
+        cache[cache_block].block = -1;
+        cache[cache_block].timestamp = -1;
+
+        for (int byte = 0; byte < 256; byte++) {
+
+            cache[cache_block].data[byte] = 0;
+        }
+    }
+
+    logMessage(LOG_INFO_LEVEL, "init_cmpsc311_cache: initialization complete [%d/%d]", maxblocks, maxblocks*256);
     /* Return successfully */
     return( 0 );
 }
@@ -71,6 +217,12 @@ int lcloud_initcache( int maxblocks ) {
 // Outputs      : 0 if successful, -1 if failure
 
 int lcloud_closecache( void ) {
+
+    int total_accesses = hits + misses;
+    float hit_rate = hits / total_accesses;
+
+    free(cache);
+
     /* Return successfully */
     return( 0 );
 }
