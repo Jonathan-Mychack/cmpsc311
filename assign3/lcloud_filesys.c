@@ -5,7 +5,7 @@
 //                   filesystem interfaces.
 //
 //   Author        : Jonathan Mychack
-//   Last Modified : 3/18/20
+//   Last Modified : 4/18/20
 //
 
 // Include files
@@ -361,7 +361,7 @@ int lcread( LcFHandle fh, char *buf, size_t len ) {
     for (int read = 0; read < total_possible_reads; read++) {
 
         char buffer[256] = {0};
-        //char *cache_buffer;
+        char *cache_buffer;
 
         int section = open_files_array[location].position / 256;  //use the markers in the file struct to determine which sector and block the current position is in
         int temp_sector = open_files_array[location].blocks[section][0];
@@ -370,20 +370,19 @@ int lcread( LcFHandle fh, char *buf, size_t len ) {
         int index = open_files_array[location].position % 256;  //starting index to be used for the buffer that reads the data
         int block_space_remaining = 256 - index;
 
-        /*cache_buffer = lcloud_getcache(active_devices_array[device_index].id, temp_sector, temp_block);
+        cache_buffer = lcloud_getcache(active_devices_array[device_index].id, temp_sector, temp_block);  //check if the desired block is in the cache
 
-        if (cache_buffer == '-1') {
+        if (cache_buffer == NULL) {  //if there was a cache miss, make an io call
             get_block(buffer, active_devices_array[device_index].id, temp_sector, temp_block);
             lcloud_putcache(active_devices_array[device_index].id, temp_sector, temp_block, buffer);
         }
-        else {
+        else {  //if there was cache hit, fill up the local buffer with the block info from the cache
 
-            for (int index = 0; index < 256; index++) {
+            for (int i = 0; i < 256; i++) {
 
-                buffer[index] = cache_buffer[index];
+                buffer[i] = cache_buffer[i];
             }
-        }*/
-        get_block(buffer, active_devices_array[device_index].id, temp_sector, temp_block);
+        }
         logMessage(LcDriverLLevel, "Success reading blkc [%d/%d/%d].", active_devices_array[device_index].id, temp_sector, temp_block);
 
         if ((len - count) <= block_space_remaining) {  //if the current read can be done without exceeding the block space
@@ -525,10 +524,10 @@ int lcwrite( LcFHandle fh, char *buf, size_t len ) {
         }
 
         memcpy(&buffer[bytes_in_block], &buf[count], write_size);
-        //lcloud_putcache(active_devices_array[device_index].id, sector, block, buffer);
+        lcloud_putcache(active_devices_array[device_index].id, sector, block, buffer);  //update the cache with new information
         put_block(buffer, active_devices_array[device_index].id, sector, block);
 
-        int section = open_files_array[location].length / 256;  //make note of which sector and block was used for this part of the file
+        int section = open_files_array[location].length / 256;  //make note of which sector, block, and device was used for this part of the file
         if (open_files_array[location].blocks[section][0] == -1) {
             open_files_array[location].blocks[section][0] = sector;
             open_files_array[location].blocks[section][1] = block;
@@ -662,6 +661,7 @@ int lcshutdown( void ) {
         free(active_devices_array[device].used_locations);
     }
 
+    lcloud_closecache();
     logMessage(LcDriverLLevel, "Powered off the LionCloud system.");
     return(0);
 }

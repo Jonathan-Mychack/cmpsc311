@@ -4,8 +4,8 @@
 //  Description    : This is the cache implementation for the LionCloud
 //                   assignment for CMPSC311.
 //
-//   Author        : Patrick McDaniel
-//   Last Modified : Thu 19 Mar 2020 09:27:55 AM EDT
+//   Author        : Jonathan Mychack
+//   Last Modified : 4/18/20
 //
 
 // Includes 
@@ -25,9 +25,8 @@ typedef struct {
 } Cache;
 
 Cache *cache;
-int hits = 0;
-int misses = 0;
-int *return_data;
+float hits = 0;
+float misses = 0;
 
 //
 // Functions
@@ -38,19 +37,16 @@ int *return_data;
 // Description  : increments all timestamps by one except for the one given by the inputted cache line
 //
 // Inputs       : cache_line - the cache line number for the data whose timestamp will not be changed
-// Outputs      : 0 if success, -1 if failure
-int adjust_timestamps(int cache_line) {
+// Outputs      : nothing
+void adjust_timestamps(int cache_line) {
 
     for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
 
         if ((cache[cache_block].cache_line != cache_line) && (cache[cache_block].timestamp != -1)) {
 
             cache[cache_block].timestamp += 1;
-            return(0);
         }
     }
-    
-    return(-1);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -67,13 +63,13 @@ char * lcloud_getcache( LcDeviceId did, uint16_t sec, uint16_t blk ) {
 
     for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
 
-        int found = 1;
+        int found = 1;  //assume cache location exists for given input
         if (cache[cache_block].device_id != did  || cache[cache_block].sector != sec || cache[cache_block].block != blk) {
 
-            found = 0;
+            found = 0;  //if the inputted information is not found, set found to 0
         }
         
-        if (found == 1) {
+        if (found == 1) {  //cache hit! fix timestamps and return the cache block's data
 
             hits += 1;
             cache[cache_block].timestamp = 0;
@@ -84,7 +80,7 @@ char * lcloud_getcache( LcDeviceId did, uint16_t sec, uint16_t blk ) {
         }
     }
 
-    misses += 1;
+    misses += 1;  //cache miss, increment miss count and return NULL
     logMessage(LOG_INFO_LEVEL, "Cache item [%d/%d/%d] not found", did, sec, blk);
     /* Return not found */
     return( NULL );
@@ -102,6 +98,7 @@ char * lcloud_getcache( LcDeviceId did, uint16_t sec, uint16_t blk ) {
 
 int lcloud_putcache( LcDeviceId did, uint16_t sec, uint16_t blk, char *block ) {
 
+    // Error Checks
     for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
 
         int exists = 1;
@@ -120,17 +117,18 @@ int lcloud_putcache( LcDeviceId did, uint16_t sec, uint16_t blk, char *block ) {
     if (did == -1 || sec == -1 || blk == -1) {
         return(-1);
     }
+    //////
 
     for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
 
-        if (cache[cache_block].timestamp == -1) {
+        if (cache[cache_block].timestamp == -1) {  //go through all of the cache blocks that haven't been used
 
-            cache[cache_block].timestamp = 0;
+            cache[cache_block].timestamp = 0;  //set the values
             cache[cache_block].device_id = did;
             cache[cache_block].sector = sec;
             cache[cache_block].block = blk;
             
-            for (int index = 0; index < 256; index++) {
+            for (int index = 0; index < 256; index++) {  //insert the data
                 cache[cache_block].data[index] = block[index];
             }
 
@@ -140,31 +138,36 @@ int lcloud_putcache( LcDeviceId did, uint16_t sec, uint16_t blk, char *block ) {
         }
     }
 
-    int least_recent = 0;
+    int least_recent = 0;  //if the code reaches this point, all cache blocks have been used
     int least_recent_line = 0;
     for (int cache_block = 0; cache_block < LC_CACHE_MAXBLOCKS; cache_block++) {
 
-        if (cache[cache_block].device_id == did && cache[cache_block].sector == sec && cache[cache_block].block == blk) {
+        if (cache[cache_block].device_id == did && cache[cache_block].sector == sec && cache[cache_block].block == blk) {  //if this location is already in the cache, select its cache line
 
             least_recent = cache[cache_block].timestamp;
             least_recent_line = cache[cache_block].cache_line;
             break;
         }
 
-        if (cache[cache_block].timestamp > least_recent) {
+        if (cache[cache_block].timestamp > least_recent) {  //if the function inputs are not in the cache, select the least recently used cache line to be overwritten
 
             least_recent = cache[cache_block].timestamp;
             least_recent_line = cache[cache_block].cache_line;
         }   
     }
 
-    logMessage(LOG_INFO_LEVEL, "Ejecting cache item [%d/%d/%d]", cache[least_recent_line].device_id, cache[least_recent_line].sector, cache[least_recent_line].block);
-    cache[least_recent_line].timestamp = 0;
+    if (cache[least_recent_line].device_id == did && cache[least_recent_line].sector == sec && cache[least_recent_line].block == blk) {
+        logMessage(LOG_INFO_LEVEL, "Updating cache item [%d/%d/%d]", cache[least_recent_line].device_id, cache[least_recent_line].sector, cache[least_recent_line].block);
+    }
+    else {
+        logMessage(LOG_INFO_LEVEL, "Ejecting cache item [%d/%d/%d]", cache[least_recent_line].device_id, cache[least_recent_line].sector, cache[least_recent_line].block);
+    }
+    cache[least_recent_line].timestamp = 0;  //set the new values for this line of the cache
     cache[least_recent_line].device_id = did;
     cache[least_recent_line].sector = sec;
     cache[least_recent_line].block = blk;
 
-    for (int index = 0; index < 256; index++) {
+    for (int index = 0; index < 256; index++) {  //insert the data
         cache[least_recent_line].data[index] = block[index];
     }
     adjust_timestamps(least_recent_line);
@@ -218,8 +221,13 @@ int lcloud_initcache( int maxblocks ) {
 
 int lcloud_closecache( void ) {
 
-    int total_accesses = hits + misses;
-    float hit_rate = hits / total_accesses;
+    float total_accesses = hits + misses;
+    float hit_rate = (hits / total_accesses) * 100;
+
+    logMessage(LOG_INFO_LEVEL, "Closed cmpsc311 cache, deleting 64 items");
+    logMessage(LOG_INFO_LEVEL, "Cache hits [%d]", (int)hits);
+    logMessage(LOG_INFO_LEVEL, "Cache misses [%d]", (int)misses);
+    logMessage(LOG_INFO_LEVEL, "Cache efficiency [%.2f\%]", hit_rate);
 
     free(cache);
 
